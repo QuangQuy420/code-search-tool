@@ -10,7 +10,10 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
+from app.services.embedder import embed_text
 from app.services.explainer import explain_code
+from app.services.indexer import index_repo, list_indexed_repos, validate_repo_url
+from app.services.vector_store import search as vector_search
 
 logger = logging.getLogger("code_search_tool")
 logging.basicConfig(level=logging.INFO)
@@ -106,10 +109,81 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+class IndexRequest(BaseModel):
+    repo_url: str
+
+
+class SearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    repo_name: str | None = None
+
+
 class ExplainRequest(BaseModel):
     code: str
     language: str
     function_name: str
+
+
+@app.post("/api/index")
+async def index_repository(request: IndexRequest):
+    """Clone a GitHub repo, parse, embed, and store in Pinecone."""
+    if not validate_repo_url(request.repo_url):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Invalid GitHub repo URL. Expected: https://github.com/owner/repo"},
+        )
+    try:
+        result = index_repo(request.repo_url)
+        return result
+    except RuntimeError as exc:
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+
+@app.get("/api/repos")
+async def get_repos():
+    """List all indexed repositories."""
+    repos = list_indexed_repos()
+    return {"repos": repos}
+
+
+@app.post("/api/search")
+async def search_code(request: SearchRequest):
+    """Search indexed code with a natural language query."""
+    if not request.query.strip():
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Query must not be empty."},
+        )
+    if not 1 <= request.top_k <= 20:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "top_k must be between 1 and 20."},
+        )
+
+    query_vector = embed_text(request.query)
+    matches = vector_search(
+        query_vector=query_vector,
+        top_k=request.top_k,
+        repo_name=request.repo_name,
+    )
+
+    results = []
+    for match in matches:
+        meta = match.get("metadata", {})
+        results.append({
+            "score": match.get("score", 0),
+            "file_path": meta.get("file_path", ""),
+            "function_name": meta.get("function_name", ""),
+            "start_line": meta.get("start_line", 0),
+            "end_line": meta.get("end_line", 0),
+            "code": meta.get("code", ""),
+            "language": meta.get("language", ""),
+            "chunk_type": meta.get("chunk_type", ""),
+            "repo_name": meta.get("repo_name", ""),
+        })
+
+    return {"results": results}
 
 
 @app.post("/api/explain")
