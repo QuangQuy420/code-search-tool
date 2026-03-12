@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
@@ -112,17 +112,63 @@ async def global_exception_handler(request: Request, exc: Exception):
 class IndexRequest(BaseModel):
     repo_url: str
 
+    @field_validator("repo_url")
+    @classmethod
+    def validate_repo_url_format(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("repo_url must not be empty")
+        # Reject URLs with shell metacharacters (defense-in-depth for git clone)
+        dangerous = set(";|&$`\\'\"\n\r")
+        if any(c in v for c in dangerous):
+            raise ValueError("repo_url contains invalid characters")
+        return v
+
 
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
     repo_name: str | None = None
 
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("query must not be empty")
+        if len(v) > 500:
+            raise ValueError("query must be 500 characters or fewer")
+        return v
+
+    @field_validator("top_k")
+    @classmethod
+    def validate_top_k(cls, v: int) -> int:
+        if not 1 <= v <= 20:
+            raise ValueError("top_k must be between 1 and 20")
+        return v
+
 
 class ExplainRequest(BaseModel):
     code: str
     language: str
     function_name: str
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("code must not be empty")
+        if len(v) > 10000:
+            raise ValueError("code must be 10,000 characters or fewer")
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        allowed = {"python", "javascript", "typescript", "tsx", "java", "go", "rust"}
+        if v.lower() not in allowed:
+            raise ValueError(f"language must be one of: {', '.join(sorted(allowed))}")
+        return v.lower()
 
 
 @app.post("/api/index")
@@ -150,17 +196,6 @@ async def get_repos():
 @app.post("/api/search")
 async def search_code(request: SearchRequest):
     """Search indexed code with a natural language query."""
-    if not request.query.strip():
-        return JSONResponse(
-            status_code=422,
-            content={"detail": "Query must not be empty."},
-        )
-    if not 1 <= request.top_k <= 20:
-        return JSONResponse(
-            status_code=422,
-            content={"detail": "top_k must be between 1 and 20."},
-        )
-
     query_vector = embed_text(request.query)
     matches = vector_search(
         query_vector=query_vector,
