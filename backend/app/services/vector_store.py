@@ -12,13 +12,11 @@ Index configuration: 384 dimensions, cosine similarity.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from pinecone import Pinecone, ServerlessSpec
 
-PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
-PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "code-search")
+from app.config import settings
 
 VECTOR_DIMENSION = 384
 SIMILARITY_METRIC = "cosine"
@@ -37,27 +35,27 @@ REQUIRED_METADATA_FIELDS = {
 
 def _get_client() -> Pinecone:
     """Create and return a Pinecone client."""
-    if not PINECONE_API_KEY:
+    if not settings.PINECONE_API_KEY:
         raise ValueError(
             "PINECONE_API_KEY environment variable is not set. "
             "Please set it before using the vector store."
         )
-    return Pinecone(api_key=PINECONE_API_KEY)
+    return Pinecone(api_key=settings.PINECONE_API_KEY)
 
 
 def _get_or_create_index(client: Pinecone) -> Any:
     """Get existing index or create one with the configured settings."""
     existing_indexes = [idx.name for idx in client.list_indexes()]
 
-    if PINECONE_INDEX_NAME not in existing_indexes:
+    if settings.PINECONE_INDEX_NAME not in existing_indexes:
         client.create_index(
-            name=PINECONE_INDEX_NAME,
+            name=settings.PINECONE_INDEX_NAME,
             dimension=VECTOR_DIMENSION,
             metric=SIMILARITY_METRIC,
             spec=ServerlessSpec(cloud="aws", region="us-east-1"),
         )
 
-    return client.Index(PINECONE_INDEX_NAME)
+    return client.Index(settings.PINECONE_INDEX_NAME)
 
 
 def _validate_vector(vector: dict) -> None:

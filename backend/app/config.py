@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     PINECONE_API_KEY: str = ""
-    PINECONE_INDEX_NAME: str = "code-search"
+    PINECONE_INDEX_NAME: str = "code-search-tool"
     GROQ_API_KEY: str = ""
     ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",

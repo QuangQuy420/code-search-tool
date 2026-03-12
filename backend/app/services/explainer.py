@@ -1,10 +1,8 @@
-import os
 from collections.abc import AsyncGenerator
 
 from groq import AsyncGroq, RateLimitError
 
-
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+from app.config import settings
 
 PROMPT_TEMPLATE = """\
 You are an expert software engineer. A user has asked you to explain the following \
@@ -34,7 +32,7 @@ async def explain_code(
 
     Yields text chunks as they arrive from the Groq API.
     """
-    api_key = GROQ_API_KEY
+    api_key = settings.GROQ_API_KEY
     if not api_key:
         raise ValueError("GROQ_API_KEY environment variable is not set")
 
