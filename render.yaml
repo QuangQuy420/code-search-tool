@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: code-search-tool-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
