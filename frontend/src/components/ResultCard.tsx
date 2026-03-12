@@ -17,9 +17,11 @@ const LANGUAGE_COLORS: Record<string, string> = {
 interface ResultCardProps {
   result: SearchResult;
   onExplain: (result: SearchResult) => void;
+  explanation?: string;
+  isExplaining?: boolean;
 }
 
-export default function ResultCard({ result, onExplain }: ResultCardProps) {
+export default function ResultCard({ result, onExplain, explanation, isExplaining }: ResultCardProps) {
   const [expanded, setExpanded] = useState(true);
   const scorePercent = Math.round(result.score * 100);
   const langColor =
@@ -87,14 +89,39 @@ export default function ResultCard({ result, onExplain }: ResultCardProps) {
         </div>
       )}
 
+      {/* Explanation panel */}
+      {(explanation !== undefined || isExplaining) && (
+        <div className="border-t border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-800/50">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-medium text-violet-600 dark:text-violet-400">
+              {isExplaining ? "Generating..." : "Explanation"}
+            </span>
+            {!isExplaining && explanation && (
+              <button
+                onClick={() => onExplain(result)}
+                className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+          <div className="prose prose-sm max-w-none text-zinc-700 dark:prose-invert dark:text-zinc-300">
+            {explanation || (
+              <span className="animate-pulse text-zinc-400">Waiting for response...</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-2 dark:border-zinc-800">
         <span className="text-xs text-zinc-400">{result.chunk_type}</span>
         <button
           onClick={() => onExplain(result)}
-          className="rounded-md bg-violet-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-violet-700"
+          disabled={isExplaining}
+          className="rounded-md bg-violet-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50"
         >
-          Explain
+          {isExplaining ? "Explaining..." : explanation !== undefined ? "Re-explain" : "Explain"}
         </button>
       </div>
     </div>

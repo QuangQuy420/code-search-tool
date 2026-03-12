@@ -9,6 +9,8 @@ interface ResultsListProps {
   hasSearched: boolean;
   error: string | null;
   onExplain: (result: SearchResult) => void;
+  explanations?: Record<string, string>;
+  explainingKey?: string | null;
 }
 
 export default function ResultsList({
@@ -17,6 +19,8 @@ export default function ResultsList({
   hasSearched,
   error,
   onExplain,
+  explanations = {},
+  explainingKey = null,
 }: ResultsListProps) {
   if (error) {
     return (
@@ -57,9 +61,18 @@ export default function ResultsList({
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
         {results.length} result{results.length !== 1 ? "s" : ""} found
       </p>
-      {results.map((result, i) => (
-        <ResultCard key={`${result.file_path}-${result.function_name}-${i}`} result={result} onExplain={onExplain} />
-      ))}
+      {results.map((result, i) => {
+        const key = `${result.file_path}:${result.function_name}:${result.start_line}`;
+        return (
+          <ResultCard
+            key={`${result.file_path}-${result.function_name}-${i}`}
+            result={result}
+            onExplain={onExplain}
+            explanation={explanations[key]}
+            isExplaining={explainingKey === key}
+          />
+        );
+      })}
     </div>
   );
 }
