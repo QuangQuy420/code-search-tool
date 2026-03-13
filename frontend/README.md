@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Code Search Tool — Frontend
+
+Next.js frontend for semantic code search. Search indexed repositories with natural language and get AI-powered code explanations.
+
+## Tech Stack
+
+- **Next.js** 16 with App Router
+- **React** 19
+- **TypeScript** 5
+- **Tailwind CSS** 4
+- **react-syntax-highlighter** — code display
+
+## Features
+
+- Natural language code search across indexed repos
+- Repository selector to filter search results
+- Syntax-highlighted code in search results
+- AI-powered code explanations via SSE streaming
+- Repo indexing page to add new GitHub repositories
+
+## Project Structure
+
+```
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx           # Root layout
+│   │   ├── page.tsx             # Home / search page
+│   │   └── repos/
+│   │       └── page.tsx         # Repo indexing page
+│   ├── components/
+│   │   ├── SearchBar.tsx        # Search input
+│   │   ├── RepoSelector.tsx     # Repository selector dropdown
+│   │   ├── ResultsList.tsx      # Search results list
+│   │   └── ResultCard.tsx       # Result card with code display
+│   ├── lib/
+│   │   └── api.ts               # API client (backend fetch calls)
+│   └── types/
+│       └── search.ts            # TypeScript type definitions
+├── public/
+├── package.json
+├── next.config.ts
+├── tsconfig.json
+├── postcss.config.mjs
+├── vercel.json
+└── .env.example
+```
+
+## Prerequisites
+
+- Node.js 18+
+- npm
+- Backend server running (see `../backend/README.md`)
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+cd frontend
+
+# 1. Configure environment
+cp .env.example .env.local
+# Edit .env.local if your backend runs on a different URL
+
+# 2. Install dependencies
+npm install
+
+# 3. Start development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app runs at **http://localhost:3000**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NEXT_PUBLIC_API_URL` | Backend API URL | `http://localhost:8000` |
 
-## Learn More
+## Available Scripts
 
-To learn more about Next.js, take a look at the following resources:
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Build for production |
+| `npm start` | Start production server |
+| `npm run lint` | Run ESLint |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The project is configured for **Vercel** deployment (`vercel.json` included). Connect your GitHub repo to Vercel and set `NEXT_PUBLIC_API_URL` in the Vercel environment variables.
