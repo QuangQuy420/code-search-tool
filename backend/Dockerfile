@@ -13,15 +13,15 @@ WORKDIR /app
 # Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies
-RUN uv sync --frozen --no-dev
+# Install Python dependencies (use system Python, not uv-managed)
+RUN uv sync --frozen --no-dev --python-preference=only-system
 
 # Pre-cache the sentence-transformers model at build time
-RUN uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+RUN uv run --python-preference=only-system python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 # Copy application code
 COPY . .
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "--python-preference=only-system", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
