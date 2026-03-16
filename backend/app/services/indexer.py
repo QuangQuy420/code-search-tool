@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import traceback
 from pathlib import Path
 
 from app.services.embedder import embed_batch, format_chunk_text
@@ -28,7 +29,7 @@ from app.services.vector_store import (
     _get_or_create_index,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("code_search_tool.indexer")
 
 GITHUB_URL_PATTERN = re.compile(
     r"^https://github\.com/[\w.\-]+/[\w.\-]+/?$"
@@ -49,14 +50,21 @@ def extract_repo_name(repo_url: str) -> str:
 
 def _clone_repo(repo_url: str, dest: str) -> None:
     """Shallow-clone a public GitHub repo."""
-    result = subprocess.run(
-        ["git", "clone", "--depth", "1", "--", repo_url, dest],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", "--", repo_url, dest],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
+    except subprocess.TimeoutExpired as exc:
+        logger.error(
+            "Git clone timeout",
+            extra={"repo_url": repo_url, "timeout_seconds": 120}
+        )
+        raise RuntimeError(f"git clone timeout after 120 seconds: {repo_url}") from exc
 
 
 def _find_source_files(root: str) -> list[str]:
@@ -95,26 +103,49 @@ def index_repo(repo_url: str) -> dict:
         raise ValueError(f"Invalid GitHub repo URL: {repo_url}")
 
     repo_name = extract_repo_name(repo_url)
-    logger.info("Starting indexing for %s", repo_name)
+    logger.info(
+        "Starting repo indexing",
+        extra={"repo_url": repo_url, "repo_name": repo_name}
+    )
 
     # Delete existing vectors for re-indexing
     try:
         delete_by_repo(repo_name)
-        logger.info("Cleared existing vectors for %s", repo_name)
-    except Exception:
-        logger.debug("No existing vectors to clear for %s", repo_name)
+        logger.info(
+            "Cleared existing vectors",
+            extra={"repo_name": repo_name}
+        )
+    except Exception as exc:
+        logger.debug(
+            "No existing vectors to clear",
+            extra={"repo_name": repo_name, "error": str(exc)}
+        )
 
     tmp_dir = tempfile.mkdtemp(prefix="code_search_")
     try:
         # Clone
-        logger.info("Cloning %s ...", repo_url)
+        logger.info(
+            "Starting git clone",
+            extra={"repo_url": repo_url, "repo_name": repo_name}
+        )
         _clone_repo(repo_url, tmp_dir)
+        logger.info(
+            "Repo cloned successfully",
+            extra={"repo_name": repo_name}
+        )
 
         # Find source files
         source_files = _find_source_files(tmp_dir)
-        logger.info("Found %d source files", len(source_files))
+        logger.info(
+            "Source files discovered",
+            extra={"repo_name": repo_name, "file_count": len(source_files)}
+        )
 
         if not source_files:
+            logger.warning(
+                "No source files found",
+                extra={"repo_name": repo_name}
+            )
             return {
                 "repo_name": repo_name,
                 "files_found": 0,
@@ -123,6 +154,10 @@ def index_repo(repo_url: str) -> dict:
             }
 
         # Parse all files
+        logger.info(
+            "Parsing source files",
+            extra={"repo_name": repo_name, "file_count": len(source_files)}
+        )
         all_chunks: list[CodeChunk] = []
         for fpath in source_files:
             # Use relative path for storage
@@ -139,9 +174,16 @@ def index_repo(repo_url: str) -> dict:
                     language=chunk.language,
                     chunk_type=chunk.chunk_type,
                 ))
-        logger.info("Parsed %d code chunks", len(all_chunks))
+        logger.info(
+            "Parsing complete",
+            extra={"repo_name": repo_name, "chunk_count": len(all_chunks)}
+        )
 
         if not all_chunks:
+            logger.warning(
+                "No code chunks parsed",
+                extra={"repo_name": repo_name, "file_count": len(source_files)}
+            )
             return {
                 "repo_name": repo_name,
                 "files_found": len(source_files),
@@ -150,12 +192,19 @@ def index_repo(repo_url: str) -> dict:
             }
 
         # Embed
+        logger.info(
+            "Embedding chunks",
+            extra={"repo_name": repo_name, "chunk_count": len(all_chunks)}
+        )
         texts = [
             format_chunk_text(c.chunk_type, c.function_name, c.code)
             for c in all_chunks
         ]
         embeddings = embed_batch(texts)
-        logger.info("Generated %d embeddings", len(embeddings))
+        logger.info(
+            "Embedding complete",
+            extra={"repo_name": repo_name, "embedding_count": len(embeddings)}
+        )
 
         # Build vectors for Pinecone
         vectors = []
@@ -176,9 +225,21 @@ def index_repo(repo_url: str) -> dict:
             })
 
         # Upsert to Pinecone
+        logger.info(
+            "Upserting vectors",
+            extra={"repo_name": repo_name, "vector_count": len(vectors)}
+        )
         result = upsert_vectors(vectors)
         total_upserted = sum(ns.get("upserted_count", 0) for ns in result.values())
-        logger.info("Stored %d vectors in Pinecone", total_upserted)
+        logger.info(
+            "Indexing complete",
+            extra={
+                "repo_name": repo_name,
+                "files_found": len(source_files),
+                "chunks_parsed": len(all_chunks),
+                "vectors_stored": total_upserted,
+            }
+        )
 
         return {
             "repo_name": repo_name,
@@ -186,6 +247,16 @@ def index_repo(repo_url: str) -> dict:
             "chunks_parsed": len(all_chunks),
             "vectors_stored": total_upserted,
         }
+    except Exception as exc:
+        logger.error(
+            "Indexing failed",
+            extra={
+                "repo_name": repo_name,
+                "repo_url": repo_url,
+                "exception": traceback.format_exc(),
+            }
+        )
+        raise
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

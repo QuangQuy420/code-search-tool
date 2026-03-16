@@ -8,32 +8,58 @@ once at startup using a singleton pattern.
 from __future__ import annotations
 
 import logging
+import time
 
 from sentence_transformers import SentenceTransformer
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("code_search_tool.embedder")
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 BATCH_SIZE = 64
 
 _model: SentenceTransformer | None = None
+_model_loaded = False
 
 
 def _get_model() -> SentenceTransformer:
     """Return the singleton SentenceTransformer model, loading it on first call."""
-    global _model
+    global _model, _model_loaded
     if _model is None:
-        logger.info("Loading embedding model '%s'...", MODEL_NAME)
+        logger.info(
+            "Loading embedding model",
+            extra={"model_name": MODEL_NAME}
+        )
+        start_time = time.time()
         _model = SentenceTransformer(MODEL_NAME)
-        logger.info("Embedding model loaded (dim=%d).", EMBEDDING_DIM)
+        load_time_ms = (time.time() - start_time) * 1000
+        logger.info(
+            "Embedding model loaded",
+            extra={
+                "model_name": MODEL_NAME,
+                "dimension": EMBEDDING_DIM,
+                "load_time_ms": round(load_time_ms, 1),
+            }
+        )
+        _model_loaded = True
     return _model
 
 
 def embed_text(text: str) -> list[float]:
     """Embed a single text string and return a list of floats (384-d vector)."""
     model = _get_model()
+    start_time = time.time()
     embedding = model.encode(text, show_progress_bar=False)
+    duration_ms = (time.time() - start_time) * 1000
+
+    logger.debug(
+        "Text embedded",
+        extra={
+            "input_length": len(text),
+            "duration_ms": round(duration_ms, 1),
+        }
+    )
+
     return embedding.tolist()
 
 
@@ -47,12 +73,25 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
         return []
 
     model = _get_model()
+    start_time = time.time()
+    total_input_length = sum(len(t) for t in texts)
 
     all_embeddings: list[list[float]] = []
-    for start in range(0, len(texts), BATCH_SIZE):
-        batch = texts[start : start + BATCH_SIZE]
+    for start_idx in range(0, len(texts), BATCH_SIZE):
+        batch = texts[start_idx : start_idx + BATCH_SIZE]
         embeddings = model.encode(batch, show_progress_bar=False)
         all_embeddings.extend(embeddings.tolist())
+
+    duration_ms = (time.time() - start_time) * 1000
+
+    logger.debug(
+        "Batch embedding complete",
+        extra={
+            "batch_size": len(texts),
+            "total_input_length": total_input_length,
+            "duration_ms": round(duration_ms, 1),
+        }
+    )
 
     return all_embeddings
 

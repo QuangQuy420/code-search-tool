@@ -3,6 +3,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
 import { indexRepo, listRepos, RepoInfo } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 const GITHUB_URL_RE = /^https:\/\/github\.com\/[\w.\-]+\/[\w.\-]+\/?$/;
 
@@ -15,8 +16,16 @@ export default function ReposPage() {
 
   const fetchRepos = () => {
     listRepos()
-      .then(setRepos)
-      .catch(() => {});
+      .then((repos) => {
+        logger.info("Repos loaded", { count: repos.length });
+        setRepos(repos);
+      })
+      .catch((err) => {
+        logger.error("Repos page error", {
+          action: "fetch_repos",
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      });
   };
 
   useEffect(() => {
@@ -40,10 +49,18 @@ export default function ReposPage() {
       return;
     }
 
+    logger.info("Index repo requested", { repo_url: url });
+
     setIsIndexing(true);
     setToast(null);
     try {
       const result = await indexRepo(url);
+      logger.info("Index repo complete", {
+        repo_url: url,
+        repo_name: result.repo_name,
+        files_found: result.files_found,
+        chunks_parsed: result.chunks_parsed,
+      });
       setToast({
         type: "success",
         message: `Indexed ${result.repo_name}: ${result.chunks_parsed} chunks from ${result.files_found} files`,
@@ -51,9 +68,15 @@ export default function ReposPage() {
       setRepoUrl("");
       fetchRepos();
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Indexing failed";
+      logger.error("Repos page error", {
+        action: "index_repo",
+        repo_url: url,
+        error: errorMsg,
+      });
       setToast({
         type: "error",
-        message: err instanceof Error ? err.message : "Indexing failed",
+        message: errorMsg,
       });
     } finally {
       setIsIndexing(false);
@@ -63,10 +86,19 @@ export default function ReposPage() {
   const handleReindex = async (repoName: string) => {
     const url = `https://github.com/${repoName}`;
     setRepoUrl(url);
+
+    logger.info("Index repo requested", { repo_url: url, action: "reindex" });
+
     setIsIndexing(true);
     setToast(null);
     try {
       const result = await indexRepo(url);
+      logger.info("Index repo complete", {
+        repo_url: url,
+        repo_name: result.repo_name,
+        chunks_parsed: result.chunks_parsed,
+        action: "reindex",
+      });
       setToast({
         type: "success",
         message: `Re-indexed ${result.repo_name}: ${result.chunks_parsed} chunks`,
@@ -74,9 +106,15 @@ export default function ReposPage() {
       setRepoUrl("");
       fetchRepos();
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Re-indexing failed";
+      logger.error("Repos page error", {
+        action: "reindex",
+        repo_url: url,
+        error: errorMsg,
+      });
       setToast({
         type: "error",
-        message: err instanceof Error ? err.message : "Re-indexing failed",
+        message: errorMsg,
       });
     } finally {
       setIsIndexing(false);

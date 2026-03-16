@@ -6,6 +6,7 @@ import ResultsList from "@/components/ResultsList";
 import RepoSelector from "@/components/RepoSelector";
 import { SearchResult } from "@/types/search";
 import { searchCode, listRepos, streamExplanation } from "@/lib/api";
+import { logger } from "@/lib/logger";
 import Link from "next/link";
 
 export default function Home() {
@@ -26,8 +27,16 @@ export default function Home() {
 
   useEffect(() => {
     listRepos()
-      .then((r) => setRepos(r.map((repo) => repo.repo_name)))
-      .catch(() => {});
+      .then((r) => {
+        logger.info("Repos loaded", { count: r.length });
+        setRepos(r.map((repo) => repo.repo_name));
+      })
+      .catch((err) => {
+        logger.error("Page error", {
+          action: "load_repos",
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      });
   }, []);
 
   const handleSearch = useCallback(
@@ -42,17 +51,30 @@ export default function Home() {
         setExplanations({});
         setExplainingKey(null);
 
+        logger.info("Search initiated", {
+          query,
+          repo_name: selectedRepo || undefined,
+        });
+
         try {
           const data = await searchCode(
             query,
             5,
             selectedRepo || undefined,
           );
+          logger.info("Search complete", {
+            query,
+            result_count: data.length,
+          });
           setResults(data);
         } catch (err) {
-          setError(
-            err instanceof Error ? err.message : "Failed to search. Please try again.",
-          );
+          const errorMsg = err instanceof Error ? err.message : "Failed to search. Please try again.";
+          logger.error("Page error", {
+            action: "search",
+            query,
+            error: errorMsg,
+          });
+          setError(errorMsg);
           setResults([]);
         } finally {
           setIsLoading(false);
@@ -77,6 +99,12 @@ export default function Home() {
       return;
     }
 
+    logger.info("Explain requested", {
+      function_name: result.function_name,
+      language: result.language,
+      file_path: result.file_path,
+    });
+
     setExplainingKey(key);
     setExplanations((prev) => ({ ...prev, [key]: "" }));
 
@@ -91,6 +119,11 @@ export default function Home() {
         }));
       },
       (err) => {
+        logger.error("Page error", {
+          action: "explain",
+          function_name: result.function_name,
+          error: err,
+        });
         setExplanations((prev) => ({
           ...prev,
           [key]: `Error: ${err}`,

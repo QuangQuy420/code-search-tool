@@ -12,11 +12,15 @@ Index configuration: 384 dimensions, cosine similarity.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 from pinecone import Pinecone, ServerlessSpec
 
 from app.config import settings
+
+logger = logging.getLogger("code_search_tool.vector_store")
 
 VECTOR_DIMENSION = 384
 SIMILARITY_METRIC = "cosine"
@@ -36,10 +40,12 @@ REQUIRED_METADATA_FIELDS = {
 def _get_client() -> Pinecone:
     """Create and return a Pinecone client."""
     if not settings.PINECONE_API_KEY:
+        logger.error("PINECONE_API_KEY is not set")
         raise ValueError(
             "PINECONE_API_KEY environment variable is not set. "
             "Please set it before using the vector store."
         )
+    logger.debug("Initializing Pinecone client")
     return Pinecone(api_key=settings.PINECONE_API_KEY)
 
 
@@ -48,11 +54,28 @@ def _get_or_create_index(client: Pinecone) -> Any:
     existing_indexes = [idx.name for idx in client.list_indexes()]
 
     if settings.PINECONE_INDEX_NAME not in existing_indexes:
+        logger.info(
+            "Creating Pinecone index",
+            extra={
+                "index_name": settings.PINECONE_INDEX_NAME,
+                "dimension": VECTOR_DIMENSION,
+                "metric": SIMILARITY_METRIC,
+            }
+        )
         client.create_index(
             name=settings.PINECONE_INDEX_NAME,
             dimension=VECTOR_DIMENSION,
             metric=SIMILARITY_METRIC,
             spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+        )
+        logger.info(
+            "Pinecone index created",
+            extra={"index_name": settings.PINECONE_INDEX_NAME}
+        )
+    else:
+        logger.debug(
+            "Using existing Pinecone index",
+            extra={"index_name": settings.PINECONE_INDEX_NAME}
         )
 
     return client.Index(settings.PINECONE_INDEX_NAME)
@@ -138,9 +161,11 @@ def search(
     if filter_metadata:
         query_kwargs["filter"] = filter_metadata
 
+    start_time = time.time()
     response = index.query(**query_kwargs)
+    duration_ms = (time.time() - start_time) * 1000
 
-    return [
+    results = [
         {
             "id": match["id"],
             "score": match["score"],
@@ -148,6 +173,19 @@ def search(
         }
         for match in response.get("matches", [])
     ]
+
+    logger.debug(
+        "Vector search completed",
+        extra={
+            "query_vector_dim": len(query_vector),
+            "top_k": top_k,
+            "repo_name": repo_name,
+            "result_count": len(results),
+            "duration_ms": round(duration_ms, 1),
+        }
+    )
+
+    return results
 
 
 def delete_by_repo(repo_name: str) -> None:

@@ -1,4 +1,5 @@
 import { SearchResult } from "@/types/search";
+import { logger } from "@/lib/logger";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -11,29 +12,69 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = options?.method || 'GET';
+  const startTime = performance.now();
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  logger.info("API request", {
+    method,
+    endpoint: path,
+    request_id: requestId,
+  });
+
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
       headers: { "Content-Type": "application/json" },
       ...options,
     });
-  } catch {
+  } catch (err) {
+    const duration = performance.now() - startTime;
+    logger.error("API error", {
+      endpoint: path,
+      error: err instanceof Error ? err.message : 'Unknown error',
+      duration_ms: Math.round(duration),
+      request_id: requestId,
+    });
     throw new ApiError(
       "Backend is starting up, please wait...",
       0,
     );
   }
 
+  const duration = performance.now() - startTime;
+  const responseRequestId = res.headers.get('X-Request-ID');
+
   if (!res.ok) {
     if (res.status === 503) {
+      logger.error("API error", {
+        endpoint: path,
+        status: res.status,
+        duration_ms: Math.round(duration),
+        request_id: responseRequestId || requestId,
+      });
       throw new ApiError("Service temporarily unavailable", 503);
     }
     const body = await res.json().catch(() => ({}));
+    logger.error("API error", {
+      endpoint: path,
+      status: res.status,
+      error: body.detail || `Request failed (${res.status})`,
+      duration_ms: Math.round(duration),
+      request_id: responseRequestId || requestId,
+    });
     throw new ApiError(
       body.detail || `Request failed (${res.status})`,
       res.status,
     );
   }
+
+  logger.info("API response", {
+    endpoint: path,
+    status: res.status,
+    duration_ms: Math.round(duration),
+    request_id: responseRequestId || requestId,
+  });
 
   return res.json();
 }
@@ -86,6 +127,14 @@ export function streamExplanation(
   onDone: () => void,
 ): AbortController {
   const controller = new AbortController();
+  const startTime = performance.now();
+  const requestId = `explain-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  logger.info("Explain request", {
+    function_name: functionName,
+    language,
+    request_id: requestId,
+  });
 
   fetch(`${API_URL}/api/explain`, {
     method: "POST",
@@ -95,6 +144,14 @@ export function streamExplanation(
   })
     .then(async (res) => {
       if (!res.ok || !res.body) {
+        const duration = performance.now() - startTime;
+        logger.error("Explain error", {
+          function_name: functionName,
+          status: res.status,
+          error: "Failed to start explanation",
+          duration_ms: Math.round(duration),
+          request_id: requestId,
+        });
         onError("Failed to start explanation");
         return;
       }
@@ -119,15 +176,27 @@ export function streamExplanation(
           }
         }
       }
+      const duration = performance.now() - startTime;
+      logger.info("Explain complete", {
+        function_name: functionName,
+        duration_ms: Math.round(duration),
+        request_id: requestId,
+      });
       onDone();
     })
     .catch((err) => {
       if (err.name !== "AbortError") {
-        onError(
-          err.message?.includes("rate limit")
-            ? "Explanation service is busy, try again in a moment"
-            : "Network error — please retry",
-        );
+        const duration = performance.now() - startTime;
+        const errorMsg = err.message?.includes("rate limit")
+          ? "Explanation service is busy, try again in a moment"
+          : "Network error — please retry";
+        logger.error("Explain error", {
+          function_name: functionName,
+          error: err.message || 'Unknown error',
+          duration_ms: Math.round(duration),
+          request_id: requestId,
+        });
+        onError(errorMsg);
       }
     });
 
