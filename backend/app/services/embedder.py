@@ -45,6 +45,11 @@ def _get_model() -> SentenceTransformer:
     return _model
 
 
+def preload_model() -> None:
+    """Eagerly load the embedding model. Call at application startup."""
+    _get_model()
+
+
 def embed_text(text: str) -> list[float]:
     """Embed a single text string and return a list of floats (384-d vector)."""
     model = _get_model()

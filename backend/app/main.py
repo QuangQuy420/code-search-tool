@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
 from app.logging_config import setup_logging, set_request_id, get_request_id
-from app.services.embedder import embed_text
+from app.services.embedder import embed_text, preload_model
 from app.services.explainer import explain_code
 from app.services.indexer import index_repo, list_indexed_repos, validate_repo_url
 from app.services.vector_store import search as vector_search
@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
             "allowed_origins": ", ".join(settings.ALLOWED_ORIGINS),
         },
     )
+    preload_model()
     yield
 
 
